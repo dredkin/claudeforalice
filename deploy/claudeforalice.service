@@ -1,0 +1,34 @@
+[Unit]
+Description=Alice × Claude AI skill (Flask/gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=claudeforalice
+Group=claudeforalice
+WorkingDirectory=/srv/claudeforalice
+
+# Load environment variables from .env
+EnvironmentFile=/srv/claudeforalice/.env
+
+# Use gunicorn from the venv
+ExecStart=/srv/claudeforalice/.venv/bin/gunicorn \
+    app:app \
+    --bind 127.0.0.1:37842 \
+    --workers 4 \
+    --timeout 60 \
+    --access-logfile /var/log/claudeforalice/access.log \
+    --error-logfile  /var/log/claudeforalice/error.log \
+    --log-level info
+
+Restart=on-failure
+RestartSec=5
+
+# Harden the service
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/claudeforalice
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

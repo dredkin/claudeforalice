@@ -9,12 +9,16 @@ directly to the Claude Messages API.
 from __future__ import annotations
 
 import threading
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import config
 
 # { user_id: [{"role": ..., "content": ...}, ...] }
 _store: Dict[str, List[Dict[str, str]]] = {}
+
+# { user_id: last_reply_text }  — кэш последнего ответа для функции «повтори»
+_last_reply: Dict[str, str] = {}
+
 _lock = threading.Lock()
 
 
@@ -22,6 +26,12 @@ def get_history(user_id: str) -> List[Dict[str, str]]:
     """Return a *copy* of the conversation history for *user_id*."""
     with _lock:
         return list(_store.get(user_id, []))
+
+
+def get_last_reply(user_id: str) -> Optional[str]:
+    """Return the last assistant reply for *user_id*, or None if not available."""
+    with _lock:
+        return _last_reply.get(user_id)
 
 
 def append_turn(user_id: str, user_text: str, assistant_text: str) -> None:
@@ -41,8 +51,12 @@ def append_turn(user_id: str, user_text: str, assistant_text: str) -> None:
         if len(history) > max_messages:
             _store[user_id] = history[-max_messages:]
 
+        # Cache last reply for repeat requests
+        _last_reply[user_id] = assistant_text
+
 
 def clear_history(user_id: str) -> None:
-    """Wipe the conversation history for *user_id*."""
+    """Wipe the conversation history and last reply cache for *user_id*."""
     with _lock:
         _store.pop(user_id, None)
+        _last_reply.pop(user_id, None)

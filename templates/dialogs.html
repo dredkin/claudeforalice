@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Диалоги — Alice × Claude</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 900px;
+    margin: 0 auto 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { font-size: 1.2rem; font-weight: 600; color: #f1f5f9; }
+  .nav { display: flex; gap: 10px; }
+  .btn {
+    padding: 6px 16px;
+    background: transparent;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: .85rem;
+    transition: all .15s;
+  }
+  .btn:hover { background: #1e293b; color: #e2e8f0; }
+  .btn.primary { background: #6366f1; border-color: #6366f1; color: #fff; }
+  .btn.primary:hover { background: #4f46e5; }
+  /* Table */
+  .wrap { max-width: 900px; margin: 0 auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #64748b;
+    border-bottom: 1px solid #334155;
+  }
+  td {
+    padding: 12px 14px;
+    font-size: .88rem;
+    border-bottom: 1px solid #1e293b;
+    vertical-align: top;
+  }
+  tr:hover td { background: #1e293b40; }
+  .uid { font-family: monospace; font-size: .78rem; color: #94a3b8; }
+  .turns { color: #f1f5f9; font-weight: 600; }
+  .date  { color: #64748b; font-size: .8rem; }
+  .preview { color: #cbd5e1; max-width: 340px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .action a { color: #6366f1; text-decoration: none; font-size: .82rem; }
+  .action a:hover { text-decoration: underline; }
+  .action form { display: inline; }
+  .action button {
+    background: none; border: none; color: #ef4444; cursor: pointer; font-size: .82rem; margin-left: 10px; padding: 0;
+  }
+  .action button:hover { text-decoration: underline; }
+  /* Pagination */
+  .pager {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 24px;
+  }
+  .empty { color: #475569; font-style: italic; padding: 20px 14px; }
+  .total { color: #64748b; font-size: .82rem; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📋 История диалогов</h1>
+  <div class="nav">
+    <a href="/dashboard" class="btn">← Дашборд</a>
+    <a href="/dashboard/logout" class="btn">Выйти</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <p class="total">Всего диалогов: <strong>{{ total }}</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Пользователь</th>
+        <th>Начало</th>
+        <th>Последняя активность</th>
+        <th>Реплик</th>
+        <th>Последний вопрос</th>
+        <th>Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in sessions %}
+      <tr>
+        <td class="turns">{{ s.id }}</td>
+        <td class="uid">{{ s.user_id[:16] }}…</td>
+        <td class="date">{{ s.started_at | fmtts }}</td>
+        <td class="date">{{ s.last_active | fmtts }}</td>
+        <td class="turns">{{ s.turn_count }}</td>
+        <td class="preview">{{ s.preview | default('—') }}</td>
+        <td class="action">
+          <a href="/dashboard/dialogs/{{ s.id }}">Открыть</a>
+          <form method="post" action="/dashboard/dialogs/{{ s.id }}/delete"
+                onsubmit="return confirm('Удалить диалог #{{ s.id }}?')">
+            <button type="submit">Удалить</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="empty">Диалогов пока нет</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Pagination -->
+  {% if total > per_page %}
+  <div class="pager">
+    {% if page > 1 %}
+      <a href="?page={{ page - 1 }}" class="btn">← Назад</a>
+    {% endif %}
+    <span style="color:#64748b;font-size:.85rem;align-self:center;">
+      Страница {{ page }} / {{ (total + per_page - 1) // per_page }}
+    </span>
+    {% if page * per_page < total %}
+      <a href="?page={{ page + 1 }}" class="btn">Вперёд →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>

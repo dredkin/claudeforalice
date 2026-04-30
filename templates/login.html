@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход — Alice × Claude</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 40px;
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 20px 40px rgba(0,0,0,.4);
+  }
+  .logo { text-align: center; margin-bottom: 28px; }
+  .logo h1 { color: #f1f5f9; font-size: 1.4rem; font-weight: 600; }
+  .logo p  { color: #64748b; font-size: .85rem; margin-top: 4px; }
+  label { display: block; color: #94a3b8; font-size: .85rem; margin-bottom: 6px; }
+  input[type=password] {
+    width: 100%;
+    padding: 10px 14px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    color: #f1f5f9;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input[type=password]:focus { border-color: #6366f1; }
+  button {
+    margin-top: 20px;
+    width: 100%;
+    padding: 11px;
+    background: #6366f1;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  button:hover { background: #4f46e5; }
+  .error {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: rgba(239,68,68,.15);
+    border: 1px solid rgba(239,68,68,.3);
+    border-radius: 8px;
+    color: #fca5a5;
+    font-size: .88rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <h1>🤖 Alice × Claude</h1>
+    <p>Панель управления навыком</p>
+  </div>
+  <form method="post">
+    <label for="password">Пароль</label>
+    <input type="password" id="password" name="password" autofocus placeholder="••••••••">
+    <button type="submit">Войти</button>
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+  </form>
+</div>
+</body>
+</html>

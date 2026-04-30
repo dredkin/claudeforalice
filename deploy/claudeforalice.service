@@ -15,7 +15,9 @@ EnvironmentFile=/srv/claudeforalice/.env
 ExecStart=/srv/claudeforalice/.venv/bin/gunicorn \
     app:app \
     --bind 127.0.0.1:37842 \
-    --workers 4 \
+    --workers 1 \
+    --threads 8 \
+    --worker-class gthread \
     --timeout 60 \
     --access-logfile /var/log/claudeforalice/access.log \
     --error-logfile  /var/log/claudeforalice/error.log \
@@ -27,7 +29,7 @@ RestartSec=5
 # Harden the service
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/log/claudeforalice
+ReadWritePaths=/var/log/claudeforalice /srv/claudeforalice
 PrivateTmp=true
 
 [Install]

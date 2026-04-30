@@ -75,6 +75,11 @@ bash deploy/test_run.sh
 sudo bash deploy/install.sh
 ```
 
+> ⚠️ **Важно:** gunicorn должен запускаться с `--workers 1 --threads 8 --worker-class gthread`.
+> Несколько воркеров (`--workers N>1`) — разные процессы с разной памятью,
+> `pending_store` и `session_manager` между ними не синхронизируются.
+> Это уже настроено в [`deploy/claudeforalice.service`](deploy/claudeforalice.service).
+
 **Обновление после изменений:**
 ```bash
 bash deploy/update.sh           # обновить код + перезапустить сервис

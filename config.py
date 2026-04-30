@@ -1,7 +1,15 @@
 import os
+import secrets
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Dashboard
+DASHBOARD_PASSWORD: str = os.getenv("DASHBOARD_PASSWORD", "")
+# Flask secret key for sessions (auto-generated if not set, but won't survive restarts)
+SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_hex(32))
+# SQLite database file for dialog history
+DB_PATH: str = os.getenv("DB_PATH", "dialogs.db")
 
 # Anthropic / Claude settings
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")

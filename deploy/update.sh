@@ -123,6 +123,8 @@ sudo chown -R claudeforalice:claudeforalice "$APP_DIR"
 
 # ── 6. Перезапуск сервиса ─────────────────────────────────────────────────
 if $DO_RESTART; then
+    # Always reload systemd before restart to pick up any unit file changes
+    sudo systemctl daemon-reload
     info "Перезапуск сервиса $SERVICE_NAME..."
     sudo systemctl restart "$SERVICE_NAME"
     sleep 1

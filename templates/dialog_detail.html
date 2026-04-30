@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Диалог #{{ session.id }} — Alice × Claude</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 760px;
+    margin: 0 auto 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { font-size: 1.15rem; font-weight: 600; color: #f1f5f9; }
+  .nav { display: flex; gap: 10px; }
+  .btn {
+    padding: 6px 16px;
+    background: transparent;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: .85rem;
+    transition: all .15s;
+  }
+  .btn:hover { background: #1e293b; color: #e2e8f0; }
+  .btn.danger { border-color: #7f1d1d; color: #fca5a5; }
+  .btn.danger:hover { background: rgba(239,68,68,.1); }
+  /* Meta card */
+  .meta-card {
+    max-width: 760px;
+    margin: 0 auto 20px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .meta-item { font-size: .82rem; color: #64748b; }
+  .meta-item strong { color: #e2e8f0; display: block; font-size: .9rem; }
+  /* Chat bubbles */
+  .chat { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  .bubble { max-width: 85%; padding: 12px 16px; border-radius: 12px; font-size: .9rem; line-height: 1.55; word-break: break-word; }
+  .bubble.user {
+    align-self: flex-end;
+    background: #312e81;
+    border-bottom-right-radius: 4px;
+    color: #e0e7ff;
+  }
+  .bubble.assistant {
+    align-self: flex-start;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-bottom-left-radius: 4px;
+    color: #e2e8f0;
+  }
+  .bubble.alice {
+    align-self: center;
+    background: #1c2533;
+    border: 1px dashed #334155;
+    border-radius: 8px;
+    color: #64748b;
+    font-size: .82rem;
+    font-style: italic;
+    max-width: 70%;
+    text-align: center;
+  }
+  .bubble-meta { font-size: .72rem; color: #475569; margin-top: 5px; text-align: right; }
+  .bubble.assistant .bubble-meta { text-align: left; }
+  .bubble.alice .bubble-meta { text-align: center; }
+  .role-label { font-weight: 600; font-size: .75rem; margin-bottom: 4px; }
+  .role-label.user { color: #818cf8; }
+  .role-label.assistant { color: #34d399; }
+  .role-label.alice { color: #475569; }
+</style>
+</head>
+<body>
+<header>
+  <h1>💬 Диалог #{{ session.id }}</h1>
+  <div class="nav">
+    <a href="/dashboard/dialogs" class="btn">← Все диалоги</a>
+    <form method="post" action="/dashboard/dialogs/{{ session.id }}/delete"
+          onsubmit="return confirm('Удалить этот диалог?')">
+      <button type="submit" class="btn danger" style="cursor:pointer;">Удалить</button>
+    </form>
+  </div>
+</header>
+
+<div class="meta-card">
+  <div class="meta-item">
+    <strong>{{ session.user_id[:20] }}…</strong>
+    Пользователь
+  </div>
+  <div class="meta-item">
+    <strong>{{ session.started_at | fmtts }}</strong>
+    Начало
+  </div>
+  <div class="meta-item">
+    <strong>{{ session.last_active | fmtts }}</strong>
+    Последняя активность
+  </div>
+  <div class="meta-item">
+    <strong>{{ session.turn_count }}</strong>
+    Реплик
+  </div>
+</div>
+
+<div class="chat">
+  {% for msg in messages %}
+  <div class="bubble {{ msg.role }}{% if msg.role == 'assistant' and not msg.delivered %} undelivered{% endif %}">
+    <div class="role-label {{ msg.role }}">
+      {% if msg.role == 'user' %}👤 Пользователь
+      {% elif msg.role == 'assistant' %}🤖 Клод{% if not msg.delivered %} <span style="color:#eab308;font-weight:400;font-style:italic;font-size:.75rem;">⏳ ещё не доставлен</span>{% endif %}
+      {% else %}💬 Алиса
+      {% endif %}
+    </div>
+    {{ msg.content }}
+    {% if msg.role == 'assistant' %}
+      <div class="bubble-meta">
+        получен: {{ msg.ts | fmtts }}
+        {% if msg.delivered and msg.delivered_at %}
+          &nbsp;·&nbsp; отправлен Алисе: {{ msg.delivered_at | fmtts }}
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="bubble-meta">{{ msg.ts | fmtts }}</div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p style="color:#475569;font-style:italic;text-align:center;padding:20px">Сообщений нет</p>
+  {% endfor %}
+</div>
+</body>
+</html>

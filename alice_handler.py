@@ -8,11 +8,13 @@ Alice protocol reference:
 from __future__ import annotations
 
 import logging
+import time as _time
 from typing import Any, Dict, Optional
 
 import balance_client
 import claude_client
 import config
+import dialog_log
 import pending_store
 import session_manager
 
@@ -103,6 +105,24 @@ def _build_response(
     }
 
 
+def _respond(
+    text: str,
+    user_id: Optional[str],
+    *,
+    end_session: bool = False,
+    version: str = "1.0",
+    session: Optional[Dict] = None,
+    log_as_alice: bool = True,
+) -> Dict[str, Any]:
+    """Build response AND log Alice's reply to the persistent dialog log."""
+    if user_id and log_as_alice:
+        try:
+            dialog_log.log_alice_message(user_id, text)
+        except Exception as exc:
+            logger.warning("Failed to log alice message: %s", exc)
+    return _build_response(text, end_session=end_session, version=version, session=session)
+
+
 def handle(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main entry point called by the Flask view.
@@ -128,42 +148,87 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
     # "Алиса, спроси клода, <вопрос>" the utterance arrives together with
     # the new-session flag — process it immediately instead of greeting.
     if _is_new_session(event) and not utterance:
-        return _build_response(WELCOME_TEXT, version=version, session=session_meta)
+        return _respond(WELCOME_TEXT, user_id, version=version, session=session_meta)
 
+    # ── Log every non-Claude user utterance (commands, repeat, etc.) ────────
+    # READY_PHRASES are excluded here — they're logged inside the READY handler
+    # AFTER mark_delivered() so the user message appears after Claude's reply.
+    _NON_CLAUDE_PHRASES = (
+        {"стоп", "выход", "хватит", "закрыть"}
+        | BALANCE_PHRASES | REPEAT_PHRASES | RESET_PHRASES
+    )
+    if utterance and user_id and utterance in _NON_CLAUDE_PHRASES:
+        try:
+            dialog_log.log_user_message(user_id, utterance)
+        except Exception as exc:
+            logger.warning("Failed to log user message: %s", exc)
 
     # ── Explicit exit commands ──────────────────────────────────────────────
     if utterance in {"стоп", "выход", "хватит", "закрыть"}:
-        return _build_response(END_TEXT, end_session=True, version=version, session=session_meta)
+        return _respond(END_TEXT, user_id, end_session=True, version=version, session=session_meta)
 
     # ── Balance / account status check ─────────────────────────────────────
     if utterance in BALANCE_PHRASES:
         status = balance_client.get_status()
-        return _build_response(status, version=version, session=session_meta)
+        return _respond(status, user_id, version=version, session=session_meta)
 
     # ── Repeat last reply (no Claude call, no token cost) ──────────────────
     if utterance in REPEAT_PHRASES:
         last = session_manager.get_last_reply(user_id) if user_id else None
-        text = last if last else REPEAT_NO_HISTORY_TEXT
-        return _build_response(text, version=version, session=session_meta)
+        if last:
+            # Log repeat delivery as alice message so it appears in dialog log
+            if user_id:
+                try:
+                    dialog_log.log_alice_message(user_id, f"🔁 Повтор: {last}")
+                except Exception as exc:
+                    logger.warning("Failed to log repeat: %s", exc)
+            return _build_response(last, version=version, session=session_meta)
+        return _respond(REPEAT_NO_HISTORY_TEXT, user_id, version=version, session=session_meta)
 
     # ── History reset commands ──────────────────────────────────────────────
     if utterance in RESET_PHRASES:
         if user_id:
             session_manager.clear_history(user_id)
-        return _build_response(RESET_TEXT, version=version, session=session_meta)
+            dialog_log.new_session(user_id)
+        return _respond(RESET_TEXT, user_id, version=version, session=session_meta)
 
     # ── Check for deferred answer ──────────────────────────────────────────
-    if utterance in READY_PHRASES and user_id:
-        state = pending_store.get_state(user_id)
-        if state == pending_store.State.READY:
-            answer = pending_store.pop_answer(user_id)
-            if answer and user_id:
-                # The utterance that triggered this deferred call was already
-                # saved in pending_store; history was appended there too.
-                return _build_response(answer, version=version, session=session_meta)
-        elif state == pending_store.State.PENDING:
-            return _build_response(STILL_THINKING_TEXT, version=version, session=session_meta)
-        # No pending — fall through to normal Claude call below
+    if utterance in READY_PHRASES:
+        if user_id:
+            state = pending_store.get_state(user_id)
+            if state == pending_store.State.READY:
+                stored = pending_store.pop_answer(user_id)
+                if stored:
+                    reply, msg_id = stored if isinstance(stored, tuple) else (stored, None)
+                    # 1. Log user utterance — captures current time as user_ts
+                    user_ts = int(_time.time())
+                    try:
+                        dialog_log.log_user_message(user_id, utterance)
+                    except Exception as exc:
+                        logger.warning("Failed to log ready utterance: %s", exc)
+                    # 2. Mark delivered with user_ts - 1 so Claude's reply
+                    #    sorts BEFORE the "готов" utterance
+                    if msg_id:
+                        try:
+                            dialog_log.mark_delivered(msg_id, delivered_at=user_ts + 1)
+                        except Exception as exc:
+                            logger.warning("Failed to mark delivered: %s", exc)
+                    return _build_response(reply, version=version, session=session_meta)
+            elif state == pending_store.State.PENDING:
+                try:
+                    dialog_log.log_user_message(user_id, utterance)
+                except Exception as exc:
+                    logger.warning("Failed to log ready utterance: %s", exc)
+                return _respond(STILL_THINKING_TEXT, user_id, version=version, session=session_meta)
+        if user_id and utterance:
+            try:
+                dialog_log.log_user_message(user_id, utterance)
+            except Exception as exc:
+                logger.warning("Failed to log ready utterance: %s", exc)
+        return _respond(
+            "Нет ожидающего ответа. Сначала задайте вопрос.",
+            user_id, version=version, session=session_meta,
+        )
 
     # ── Normal turn: ask Claude (inline wait → async fallback) ────────────
     history = session_manager.get_history(user_id) if user_id else []
@@ -174,19 +239,40 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
         reply = claude_client.ask(history, utterance)
         return _build_response(reply, version=version, session=session_meta)
 
+    # Log user message NOW (before background task) to preserve correct order
+    try:
+        dialog_log.log_user_message(user_id, utterance)
+    except Exception as exc:
+        logger.warning("Failed to log user message: %s", exc)
+
     def _bg_ask():
         result = claude_client.ask(history, utterance)
         session_manager.append_turn(user_id, utterance, result)
-        return result
+        # Log with delivered=0 — mark delivered only when sent to Alice
+        try:
+            msg_id = dialog_log.log_assistant_message(user_id, result)
+        except Exception as exc:
+            logger.warning("Failed to log assistant message: %s", exc)
+            msg_id = None
+        return result, msg_id  # return tuple so handler can mark delivered
 
     pending_store.submit(user_id, _bg_ask)
     future = pending_store.get_future(user_id)
     if future:
         try:
             future.result(timeout=config.ALICE_REPLY_TIMEOUT)
-            reply = pending_store.pop_answer(user_id)
-            if reply:
+            # _run() stores the return value of _bg_ask() = (reply, msg_id)
+            popped = pending_store.pop_answer(user_id)
+            if popped:
+                reply, msg_id = popped if isinstance(popped, tuple) else (popped, None)
+                if msg_id:
+                    try:
+                        dialog_log.mark_delivered(msg_id)
+                    except Exception as exc:
+                        logger.warning("Failed to mark delivered: %s", exc)
                 return _build_response(reply, version=version, session=session_meta)
         except Exception:
             pass  # timed out — fall through to "thinking"
-    return _build_response(THINKING_TEXT, version=version, session=session_meta)
+
+    # Timed out — will be delivered later via READY_PHRASES
+    return _respond(THINKING_TEXT, user_id, version=version, session=session_meta)

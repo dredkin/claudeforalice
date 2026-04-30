@@ -1,7 +1,7 @@
 # Alice × Claude — навык Яндекс Алисы на базе Claude AI
 
-Навык позволяет пользователям разговаривать с моделью Anthropic Claude прямо через Яндекс Алису.  
-Каждый пользователь получает свою историю диалога, которая автоматически обрезается до последних N пар.
+Навык позволяет пользователям разговаривать с моделью Anthropic Claude прямо через Яндекс Алису.
+Каждый пользователь получает свою историю диалога. Все сессии сохраняются в SQLite и доступны через веб-дашборд.
 
 ---
 
@@ -11,13 +11,14 @@
 Alice webhook (POST /alice)
         │
         ▼
-  alice_handler.py          ← разбирает запрос, управляет командами
+  alice_handler.py         ← разбирает запрос, команды, асинхронный ответ
         │
-        ├── session_manager.py   ← история диалога + кэш последнего ответа
-        ├── pending_store.py     ← фоновые задачи (асинхронный ответ)
-        ├── balance_client.py    ← проверка состояния аккаунта
+        ├── session_manager.py   ← in-memory история + кэш последнего ответа
+        ├── pending_store.py     ← фоновые задачи (обход таймаута Алисы)
+        ├── dialog_log.py        ← SQLite-лог всех сессий и сообщений
+        ├── balance_client.py    ← проверка состояния аккаунта Anthropic
         │
-        └── claude_client.py     ← запросы к Anthropic API
+        └── claude_client.py     ← запросы к Anthropic API + обработка ошибок
                 │
                 ▼
           Anthropic Claude API
@@ -25,13 +26,14 @@ Alice webhook (POST /alice)
 
 | Файл | Назначение |
 |------|-----------|
-| [`app.py`](app.py) | Flask-приложение: `POST /alice`, `GET /alice` (диагностика), `GET /health` |
-| [`alice_handler.py`](alice_handler.py) | Парсинг запроса Alice, голосовые команды, асинхронный ответ |
-| [`claude_client.py`](claude_client.py) | Обёртка над `anthropic` SDK, обработка ошибок API |
-| [`session_manager.py`](session_manager.py) | In-memory история диалога и кэш последнего ответа |
-| [`pending_store.py`](pending_store.py) | Фоновый `ThreadPoolExecutor` для медленных запросов Claude |
-| [`balance_client.py`](balance_client.py) | Проверка активности аккаунта через тестовый запрос |
-| [`config.py`](config.py) | Все настройки из переменных окружения |
+| [`app.py`](app.py) | Flask: вебхук Alice, диагностика, веб-дашборд |
+| [`alice_handler.py`](alice_handler.py) | Парсинг Alice, голосовые команды, async-ответ, логирование |
+| [`claude_client.py`](claude_client.py) | Обёртка над `anthropic` SDK, классификация ошибок |
+| [`session_manager.py`](session_manager.py) | In-memory история и кэш последнего ответа |
+| [`pending_store.py`](pending_store.py) | `ThreadPoolExecutor` для медленных запросов |
+| [`dialog_log.py`](dialog_log.py) | SQLite: сессии + сообщения + статус доставки |
+| [`balance_client.py`](balance_client.py) | Пробный запрос для проверки аккаунта |
+| [`config.py`](config.py) | Все настройки из `.env` |
 
 ---
 
@@ -44,14 +46,12 @@ git clone <repo-url>
 cd <repo-dir>
 ```
 
-### 2. Создать виртуальное окружение и установить зависимости
+### 2. Виртуальное окружение и зависимости
 
 ```bash
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# Linux / macOS
-source .venv/bin/activate
+source .venv/bin/activate   # Linux/macOS
+# .venv\Scripts\activate    # Windows
 
 pip install -r requirements.txt
 ```
@@ -60,7 +60,7 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Открыть .env и вставить ANTHROPIC_API_KEY
+# Заполнить: ANTHROPIC_API_KEY, DASHBOARD_PASSWORD, SECRET_KEY
 ```
 
 ### 4. Запустить сервер
@@ -70,21 +70,20 @@ cp .env.example .env
 bash deploy/test_run.sh
 ```
 
-**Продакшн (установка и запуск через systemd):**
+**Продакшн (systemd):**
 ```bash
 sudo bash deploy/install.sh
 ```
 
 > ⚠️ **Важно:** gunicorn должен запускаться с `--workers 1 --threads 8 --worker-class gthread`.
-> Несколько воркеров (`--workers N>1`) — разные процессы с разной памятью,
-> `pending_store` и `session_manager` между ними не синхронизируются.
+> Несколько воркеров — разные процессы; `pending_store` и `session_manager` между ними не синхронизируются.
 > Это уже настроено в [`deploy/claudeforalice.service`](deploy/claudeforalice.service).
 
 **Обновление после изменений:**
 ```bash
-bash deploy/update.sh           # обновить код + перезапустить сервис
-bash deploy/update.sh --deps    # + переустановить зависимости
-bash deploy/update.sh --apache  # + применить конфиги Apache
+bash deploy/update.sh           # код + перезапуск
+bash deploy/update.sh --deps    # + зависимости
+bash deploy/update.sh --apache  # + конфиги Apache
 bash deploy/update.sh --all     # всё вместе
 ```
 
@@ -93,26 +92,25 @@ bash deploy/update.sh --all     # всё вместе
 ## Регистрация навыка в Яндекс Диалогах
 
 1. Зайти на [dialogs.yandex.ru](https://dialogs.yandex.ru/) → **Создать диалог → Навык Алисы**.
-2. Задать **фразу активации** (выбрать 1–2 варианта):
-   - «Умный Клод» → «Алиса, спроси у умного Клода, …»
-   - «Дядя Клод» → «Алиса, спроси у дяди Клода, …»
-   - «Доктор Клод» → «Алиса, спроси у доктора Клода, …»
-3. В разделе **Webhook URL** указать:  
-   `https://claude.dredkin.ru:4443/alice`
-4. (Опционально) Скопировать OAuth-токен из настроек навыка в `ALICE_SKILL_TOKEN` в `.env`.
-5. Сохранить и опубликовать (или тестировать в режиме черновика).
+2. Задать **фразу активации** (до 2 вариантов), которые хорошо склоняются после «спроси у …»:
+   - **«Умный Клод»** → «Алиса, спроси у умного Клода, …»
+   - **«Дядя Клод»** → «Алиса, спроси у дяди Клода, …»
+   - **«Доктор Клод»** → «Алиса, спроси у доктора Клода, …»
+3. Указать **Webhook URL**: `https://claude.dredkin.ru:4443/alice`
+4. (Опционально) Скопировать OAuth-токен навыка в `ALICE_SKILL_TOKEN` в `.env`.
+5. Сохранить и опубликовать.
 
 ---
 
 ## Голосовые команды
 
 ### Обычный вопрос
-Любая фраза → ответ от Claude.  
-Если Claude не успел ответить за `ALICE_REPLY_TIMEOUT` секунд:  
+Любая фраза → ответ от Claude.
+Если Claude не успел за `ALICE_REPLY_TIMEOUT` секунд:
 > «Клод думает над ответом. Спросите: ответ готов?»
 
 ### Получить отложенный ответ
-> «что ответил», «ответ готов», «что там», «говори», «давай», «слушаю» и др.
+> «что ответил», «ответ готов», «что там», «говори», «давай», «слушаю», «а сейчас» и др.
 
 ### Повторить последний ответ (без расхода токенов)
 > «повтори», «ещё раз», «не расслышал», «не расслышала», «скажи ещё раз», «можешь повторить» и др.
@@ -128,6 +126,57 @@ bash deploy/update.sh --all     # всё вместе
 
 ---
 
+## Асинхронный ответ (обход таймаута Алисы)
+
+Alice ждёт ответ ~5 с. Claude может генерировать дольше. Схема:
+
+```
+Пользователь задаёт вопрос
+        │
+        ▼
+Claude запускается в фоне (ThreadPoolExecutor)
+        │
+   Ждём ALICE_REPLY_TIMEOUT секунд
+        │
+   ┌────┴────┐
+успел       не успел
+   │            │
+   ▼            ▼
+Ответ сразу   «Клод думает…»
+              (фон продолжает работу)
+                    │
+              Пользователь: «что ответил?»
+                    │
+              Алиса зачитывает ответ
+```
+
+---
+
+## Веб-дашборд
+
+Доступен по адресу `/dashboard` (требует авторизации паролем).
+
+### Блоки главной страницы
+
+| Блок | Содержимое |
+|------|-----------|
+| Статус сервиса | Python, SDK, порт, uptime |
+| Аккаунт Anthropic | Живая проверка + ссылка на billing |
+| Настройки Claude | Модель, токены, таймаут, история |
+| Активные сессии | Список пользователей в памяти |
+
+### История диалогов (`/dashboard/dialogs`)
+
+- Список всех сессий с пагинацией и превью последнего вопроса
+- Детальный вид (`/dashboard/dialogs/<id>`) — пузырьки чата:
+  - 👤 Пользователь
+  - 🤖 Клод (с временем получения и временем доставки Алисе)
+  - 💬 Алиса (промежуточные ответы: «думает», «повтор» и т.д.)
+- Метка ⏳ на ответах Клода, которые ещё не доставлены пользователю
+- Кнопка удаления диалога
+
+---
+
 ## Настройка
 
 Все параметры задаются через `.env` (см. [`.env.example`](.env.example)):
@@ -140,32 +189,30 @@ bash deploy/update.sh --all     # всё вместе
 | `CLAUDE_SYSTEM_PROMPT` | (встроенный) | Системный промпт для голосового режима |
 | `MAX_HISTORY_TURNS` | `20` | Кол-во пар user/assistant в памяти |
 | `ALICE_REPLY_TIMEOUT` | `3.0` | Секунды ожидания Claude перед «думает» |
-| `FLASK_HOST` | `127.0.0.1` | Адрес прослушивания (только localhost — за Apache) |
+| `FLASK_HOST` | `127.0.0.1` | Только localhost — за Apache |
 | `FLASK_PORT` | `37842` | Порт gunicorn/Flask |
 | `FLASK_DEBUG` | `false` | Режим отладки Flask |
 | `ALICE_SKILL_TOKEN` | `` | OAuth-токен для верификации (опционально) |
+| `DASHBOARD_PASSWORD` | — | Пароль для веб-дашборда |
+| `SECRET_KEY` | (random) | Flask session key (задать для стабильности) |
+| `DB_PATH` | `dialogs.db` | Путь к SQLite-базе диалогов |
 
 ### Настройка таймаута
 
-Если Claude регулярно не укладывается в лимит Алисы (~5 с):
+Если Claude регулярно не укладывается в лимит Алисы:
 - Уменьшите `ALICE_REPLY_TIMEOUT` до `2.0`–`2.5` в `.env`
 - Уменьшите `CLAUDE_MAX_TOKENS` — короче ответ, быстрее генерация
-- Пользователь всегда может сказать «что ответил?» для получения полного ответа
 
 ---
 
 ## Диагностика
 
-**GET `/alice`** в браузере возвращает JSON со статусом сервиса:
+**GET `/alice`** — JSON-статус без авторизации:
 ```json
 {
   "service": "Alice × Claude AI skill",
   "status": "running",
-  "diagnostics": {
-    "claude_model": "claude-opus-4-5",
-    "api_key_status": "✅ set",
-    ...
-  }
+  "diagnostics": { "api_key_status": "✅ set", ... }
 }
 ```
 
@@ -182,7 +229,7 @@ tail -f /var/log/claudeforalice/error.log
 - [anthropic](https://pypi.org/project/anthropic/) — официальный Python SDK Anthropic
 - [Flask](https://flask.palletsprojects.com/) — веб-фреймворк
 - [python-dotenv](https://pypi.org/project/python-dotenv/) — загрузка `.env`
-- [gunicorn](https://gunicorn.org/) — WSGI-сервер для продакшна
+- [gunicorn](https://gunicorn.org/) — WSGI-сервер
 
 ---
 

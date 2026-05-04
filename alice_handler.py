@@ -48,6 +48,16 @@ READY_PHRASES = {
     "ну когда уже", "ну когда","готов","когда уже","когда"
 }
 
+# Disambiguation: user chooses old pending answer vs new question
+DISAMBIG_OLD_PHRASES = {
+    "первый", "первое", "старый", "старое", "прежний", "прежнее",
+    "предыдущий", "предыдущее", "тот", "тот вопрос", "да", "старый ответ",
+}
+DISAMBIG_NEW_PHRASES = {
+    "второй", "второе", "новый", "новое", "свежий", "нет",
+    "новый вопрос", "другой", "другое",
+}
+
 # What we say on the very first launch
 WELCOME_TEXT = (
     "Привет! Я Алиса с интеллектом Клода. "
@@ -143,6 +153,16 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
 
     utterance = _get_utterance(event)
 
+    # ── Session timeout check ────────────────────────────────────────────────
+    # If the user has been inactive longer than SESSION_TIMEOUT_MINUTES,
+    # wipe in-memory history and start a fresh DB session.
+    if user_id and session_manager.check_and_expire(user_id):
+        try:
+            dialog_log.new_session(user_id)
+        except Exception as exc:
+            logger.warning("Failed to create new session after timeout: %s", exc)
+        logger.info("Session expired for user_id=%s — starting fresh", user_id)
+
     # ── New session ─────────────────────────────────────────────────────────
     # If the skill was launched with a phrase like
     # "Алиса, спроси клода, <вопрос>" the utterance arrives together with
@@ -230,6 +250,47 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
             user_id, version=version, session=session_meta,
         )
 
+    # ── Disambiguation: user is choosing between old answer and new question ─
+    if user_id:
+        disambig = session_manager.get_pending_disambig(user_id)
+        if disambig:
+            old_q, new_q = disambig["old_q"], disambig["new_q"]
+            if utterance in DISAMBIG_OLD_PHRASES:
+                # User wants the old pending answer
+                session_manager.clear_pending_disambig(user_id)
+                stored = pending_store.pop_answer(user_id)
+                if stored:
+                    reply, msg_id = stored if isinstance(stored, tuple) else (stored, None)
+                    user_ts = int(_time.time())
+                    try:
+                        dialog_log.log_user_message(user_id, utterance)
+                    except Exception:
+                        pass
+                    if msg_id:
+                        try:
+                            dialog_log.mark_delivered(msg_id, delivered_at=user_ts + 1)
+                        except Exception:
+                            pass
+                    return _build_response(reply, version=version, session=session_meta)
+                return _respond("Ответ уже недоступен. Задайте новый вопрос.", user_id,
+                                version=version, session=session_meta)
+
+            elif utterance in DISAMBIG_NEW_PHRASES:
+                # User wants to drop old answer, process new question
+                session_manager.clear_pending_disambig(user_id)
+                pending_store.cancel(user_id)
+                # Fall through to process new_q as a normal Claude turn
+                utterance = new_q
+            else:
+                # Still waiting for disambiguation choice — remind
+                short_old = old_q[:40] + "…" if len(old_q) > 40 else old_q
+                short_new = new_q[:40] + "…" if len(new_q) > 40 else new_q
+                reminder = (
+                    f"Скажите «первый» чтобы получить ответ про «{short_old}», "
+                    f"или «второй» чтобы задать новый вопрос «{short_new}»."
+                )
+                return _respond(reminder, user_id, version=version, session=session_meta)
+
     # ── Normal turn: ask Claude (inline wait → async fallback) ────────────
     history = session_manager.get_history(user_id) if user_id else []
     logger.info("user_id=%s utterance=%r history_len=%d", user_id, utterance, len(history))
@@ -238,6 +299,27 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
         # Anonymous session — synchronous fallback (no history stored)
         reply = claude_client.ask(history, utterance)
         return _build_response(reply, version=version, session=session_meta)
+
+    # ── Conflict: pending/ready answer exists but user asks a new question ──
+    if user_id:
+        existing_state = pending_store.get_state(user_id)
+        if existing_state in (pending_store.State.PENDING, pending_store.State.READY):
+            old_q = pending_store.get_original_utterance(user_id)
+            if old_q and old_q != utterance:
+                # Store disambiguation context and ask user to choose
+                session_manager.set_pending_disambig(user_id, old_q=old_q, new_q=utterance)
+                short_old = old_q[:40] + "…" if len(old_q) > 40 else old_q
+                short_new = utterance[:40] + "…" if len(utterance) > 40 else utterance
+                disambig_text = (
+                    f"Клод ещё не закончил ответ про «{short_old}». "
+                    f"Скажите «первый» чтобы дождаться этого ответа, "
+                    f"или «второй» чтобы задать новый вопрос: «{short_new}»."
+                )
+                try:
+                    dialog_log.log_user_message(user_id, utterance)
+                except Exception:
+                    pass
+                return _respond(disambig_text, user_id, version=version, session=session_meta)
 
     # Log user message NOW (before background task) to preserve correct order
     try:
@@ -256,7 +338,7 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
             msg_id = None
         return result, msg_id  # return tuple so handler can mark delivered
 
-    pending_store.submit(user_id, _bg_ask)
+    pending_store.submit(user_id, _bg_ask, original_utterance=utterance)
     future = pending_store.get_future(user_id)
     if future:
         try:

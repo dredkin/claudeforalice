@@ -2,16 +2,58 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import List, Dict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import anthropic
 
 import config
+import geo_detect
 
 logger = logging.getLogger(__name__)
 
 # Shared singleton — imported by balance_client as well
 client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+
+def _build_system_prompt() -> str:
+    """
+    Build the system prompt for each request, injecting current date/time
+    and user location so Claude can answer time/place-sensitive questions.
+
+    Location and timezone come from config (set via .env). If not configured,
+    they are auto-detected from the server's public IP on first call.
+    """
+    # Resolve location and timezone — prefer .env, fall back to auto-detect
+    location = config.USER_LOCATION
+    tz_name  = config.USER_TIMEZONE
+
+    if not location or tz_name in ("", "Europe/Moscow"):
+        # Only call geo if at least one value is missing / default
+        auto_loc, auto_tz = geo_detect.detect()
+        if not location:
+            location = auto_loc
+        if tz_name == "Europe/Moscow" and auto_tz and auto_tz != "UTC":
+            tz_name = auto_tz
+
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, Exception):
+        tz = timezone.utc
+
+    now = datetime.now(tz=tz)
+    # Russian weekday names
+    weekdays_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+    weekday_ru = weekdays_ru[now.weekday()]
+    date_str = now.strftime(f"%-d %B %Y года, {weekday_ru}, %H:%M")
+
+    context_lines = [f"Текущая дата и время: {date_str}."]
+    if location:
+        context_lines.append(f"Местоположение пользователя: {location}.")
+
+    context = " ".join(context_lines)
+    return f"{config.CLAUDE_SYSTEM_PROMPT_BASE}\n\n{context}"
 
 # ── Human-readable error messages (spoken by Alice) ───────────────────────
 _ERROR_MESSAGES = {
@@ -107,14 +149,33 @@ def ask(history: List[Dict[str, str]], user_text: str) -> str:
         {"role": "user", "content": user_text}
     ]
 
+    # Build optional tools list
+    tools = []
+    if config.ENABLE_WEB_SEARCH:
+        tools.append({
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": config.WEB_SEARCH_MAX_RESULTS,
+        })
+
     try:
-        response = client.messages.create(
+        kwargs: Dict = dict(
             model=config.CLAUDE_MODEL,
             max_tokens=config.CLAUDE_MAX_TOKENS,
-            system=config.CLAUDE_SYSTEM_PROMPT,
+            system=_build_system_prompt(),
             messages=messages,
         )
-        return response.content[0].text
+        if tools:
+            kwargs["tools"] = tools
+
+        response = client.messages.create(**kwargs)
+
+        # Extract text — may be mixed with tool_use blocks when search is on
+        text_parts = [
+            block.text for block in response.content
+            if hasattr(block, "text") and block.text
+        ]
+        return " ".join(text_parts) if text_parts else _ERROR_MESSAGES["generic"]
 
     except (
         anthropic.AuthenticationError,

@@ -1,5 +1,5 @@
 [Unit]
-Description=Alice × Claude AI skill (Flask/gunicorn)
+Description=Claude for Alice AI skill (Flask/gunicorn)
 After=network.target
 
 [Service]
@@ -14,7 +14,7 @@ EnvironmentFile=/srv/claudeforalice/.env
 # Use gunicorn from the venv
 ExecStart=/srv/claudeforalice/.venv/bin/gunicorn \
     app:app \
-    --bind 127.0.0.1:37842 \
+    --bind 127.0.0.1:${FLASK_PORT} \
     --workers 1 \
     --threads 8 \
     --worker-class gthread \
@@ -23,13 +23,14 @@ ExecStart=/srv/claudeforalice/.venv/bin/gunicorn \
     --error-logfile  /var/log/claudeforalice/error.log \
     --log-level info
 
-Restart=on-failure
-RestartSec=5
+Restart=always
+RestartSec=3
 
 # Harden the service
-NoNewPrivileges=true
+# Note: NoNewPrivileges is intentionally omitted so the dashboard can run
+# "sudo systemctl restart claudeforalice" via the web UI.
 ProtectSystem=strict
-ReadWritePaths=/var/log/claudeforalice /srv/claudeforalice
+ReadWritePaths=/var/log/claudeforalice /srv/claudeforalice /run/sudo
 PrivateTmp=true
 
 [Install]

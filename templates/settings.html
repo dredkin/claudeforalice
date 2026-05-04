@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Настройки — Alice × Claude</title>
+<style>
+  .restart-badge {
+    display: inline-block; margin-left: 6px;
+    font-size: .7rem; font-weight: 600; padding: 1px 6px;
+    background: rgba(234,179,8,.15); border: 1px solid rgba(234,179,8,.35);
+    color: #fde047; border-radius: 4px; vertical-align: middle;
+    white-space: nowrap;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    max-width: 760px; margin: 0 auto 28px; flex-wrap: wrap; gap: 12px;
+  }
+  header h1 { font-size: 1.2rem; font-weight: 600; color: #f1f5f9; }
+  .nav { display: flex; gap: 10px; }
+  .btn {
+    padding: 6px 16px; background: transparent; border: 1px solid #334155;
+    border-radius: 6px; color: #94a3b8; text-decoration: none; font-size: .85rem;
+    cursor: pointer; transition: all .15s;
+  }
+  .btn:hover { background: #1e293b; color: #e2e8f0; }
+  .btn.primary { background: #6366f1; border-color: #6366f1; color: #fff; }
+  .btn.primary:hover { background: #4f46e5; }
+  .btn.danger  { border-color: #7f1d1d; color: #fca5a5; }
+  .btn.danger:hover { background: rgba(239,68,68,.1); }
+  /* Form */
+  .wrap { max-width: 760px; margin: 0 auto; }
+  .section {
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+    padding: 24px; margin-bottom: 20px;
+  }
+  .section-title {
+    font-size: .75rem; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: #64748b; margin-bottom: 18px;
+  }
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  label { display: block; font-size: .82rem; color: #94a3b8; margin-bottom: 5px; }
+  label .key { font-family: monospace; color: #e2e8f0; font-size: .85rem; }
+  label .hint { color: #475569; font-size: .75rem; display: block; margin-top: 2px; }
+  input[type=text], input[type=password], textarea, select {
+    width: 100%; padding: 9px 12px; background: #0f172a; border: 1px solid #334155;
+    border-radius: 7px; color: #f1f5f9; font-size: .9rem; font-family: monospace;
+    outline: none; transition: border-color .15s; resize: vertical;
+  }
+  input[type=text]:focus, input[type=password]:focus,
+  textarea:focus, select:focus { border-color: #6366f1; }
+  /* Checkbox toggle */
+  .toggle-wrap {
+    display: flex; align-items: center; gap: 12px; margin-top: 4px;
+  }
+  .toggle {
+    position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; background: #334155;
+    border-radius: 24px; cursor: pointer; transition: background .2s;
+  }
+  .slider::before {
+    content: ""; position: absolute; width: 18px; height: 18px;
+    left: 3px; top: 3px; background: #94a3b8; border-radius: 50%; transition: .2s;
+  }
+  .toggle input:checked + .slider { background: #6366f1; }
+  .toggle input:checked + .slider::before { transform: translateX(20px); background: #fff; }
+  .toggle-label { font-size: .88rem; color: #94a3b8; }
+  /* Alert */
+  .alert {
+    padding: 12px 16px; border-radius: 8px; font-size: .88rem; margin-bottom: 20px;
+  }
+  .alert.success { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: #86efac; }
+  .alert.error   { background: rgba(239,68,68,.12);  border: 1px solid rgba(239,68,68,.3);  color: #fca5a5; }
+  .alert.warn    { background: rgba(234,179,8,.12);  border: 1px solid rgba(234,179,8,.3);  color: #fde047; }
+  .actions { display: flex; gap: 12px; justify-content: space-between; margin-top: 8px; align-items: center; }
+  .actions-right { display: flex; gap: 12px; }
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+    padding: 28px; width: 100%; max-width: 380px;
+  }
+  .modal h2 { color: #f1f5f9; font-size: 1rem; margin-bottom: 16px; }
+  .modal label { color: #94a3b8; font-size: .85rem; margin-bottom: 6px; display: block; }
+  .modal input { margin-bottom: 16px; font-family: inherit; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚙️ Настройки (.env)</h1>
+  <div class="nav">
+    <a href="/dashboard" class="btn">← Дашборд</a>
+    <a href="/dashboard/logout" class="btn">Выйти</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+  {% if message %}
+  <div class="alert {{ message_type }}">{{ message | safe }}</div>
+  {% endif %}
+
+  <div class="alert warn">
+    ⚠️ После сохранения нажмите «🔄 Применить параметры» — изменения применятся без перезапуска сервиса.
+  </div>
+
+  <form method="post" action="/dashboard/settings" autocomplete="off">
+
+    <!-- ── Claude / Anthropic ── -->
+    <div class="section">
+      <div class="section-title">Anthropic / Claude</div>
+      <div class="field">
+        <label><span class="key">ANTHROPIC_API_KEY</span>
+          <span class="hint">Ключ API. Оставьте пустым чтобы не менять.</span></label>
+        <input type="password" name="ANTHROPIC_API_KEY" placeholder="(не изменять)"
+               autocomplete="new-password" spellcheck="false">
+      </div>
+      <div class="field">
+        <label>
+          <span class="key">CLAUDE_MODEL</span>
+          <span class="hint" id="models-hint">Загрузка списка моделей…</span>
+        </label>
+        <select name="CLAUDE_MODEL" id="model-select" style="width:100%;">
+          <option value="{{ env.CLAUDE_MODEL }}" selected>{{ env.CLAUDE_MODEL }} (текущий)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label><span class="key">CLAUDE_MAX_TOKENS</span></label>
+        <input type="text" name="CLAUDE_MAX_TOKENS" value="{{ env.CLAUDE_MAX_TOKENS }}">
+      </div>
+      <div class="field">
+        <label><span class="key">CLAUDE_SYSTEM_PROMPT</span>
+          <span class="hint">Дата и место добавляются автоматически</span></label>
+        <textarea name="CLAUDE_SYSTEM_PROMPT" rows="4">{{ env.CLAUDE_SYSTEM_PROMPT }}</textarea>
+      </div>
+    </div>
+
+    <!-- ── Web search ── -->
+    <div class="section">
+      <div class="section-title">Веб-поиск</div>
+      <div class="field">
+        <label><span class="key">ENABLE_WEB_SEARCH</span>
+          <span class="hint">⚠️ Дополнительная стоимость ~$10 / 1000 поисков</span></label>
+        <div class="toggle-wrap">
+          <label class="toggle">
+            <input type="checkbox" name="ENABLE_WEB_SEARCH" value="true"
+                   {% if env.ENABLE_WEB_SEARCH == 'true' %}checked{% endif %}>
+            <span class="slider"></span>
+          </label>
+          <span class="toggle-label">Включить веб-поиск</span>
+        </div>
+      </div>
+      <div class="field">
+        <label><span class="key">WEB_SEARCH_MAX_RESULTS</span>
+          <span class="hint">Макс. запросов за один ответ (1–5)</span></label>
+        <input type="text" name="WEB_SEARCH_MAX_RESULTS" value="{{ env.WEB_SEARCH_MAX_RESULTS }}">
+      </div>
+    </div>
+
+    <!-- ── Session & Behaviour ── -->
+    <div class="section">
+      <div class="section-title">Сессия и поведение</div>
+      <div class="field">
+        <label><span class="key">SESSION_TIMEOUT_MINUTES</span>
+          <span class="hint">Минут бездействия до сброса сессии</span></label>
+        <input type="text" name="SESSION_TIMEOUT_MINUTES" value="{{ env.SESSION_TIMEOUT_MINUTES }}">
+      </div>
+      <div class="field">
+        <label><span class="key">MAX_HISTORY_TURNS</span>
+          <span class="hint">Пар user/assistant в памяти</span></label>
+        <input type="text" name="MAX_HISTORY_TURNS" value="{{ env.MAX_HISTORY_TURNS }}">
+      </div>
+      <div class="field">
+        <label><span class="key">ALICE_REPLY_TIMEOUT</span>
+          <span class="hint">Секунд ожидания ответа (рекомендуется 2.5–4.0)</span></label>
+        <input type="text" name="ALICE_REPLY_TIMEOUT" value="{{ env.ALICE_REPLY_TIMEOUT }}">
+      </div>
+    </div>
+
+    <!-- ── Location & Timezone ── -->
+    <div class="section">
+      <div class="section-title">Местоположение и часовой пояс</div>
+      <div class="field">
+        <label><span class="key">USER_LOCATION</span>
+          <span class="hint">Пусто = авто-определение по IP</span></label>
+        <input type="text" name="USER_LOCATION" value="{{ env.USER_LOCATION }}">
+      </div>
+      <div class="field">
+        <label><span class="key">USER_TIMEZONE</span>
+          <span class="hint">IANA-название (напр. Europe/Moscow). Пусто = авто</span></label>
+        <input type="text" name="USER_TIMEZONE" value="{{ env.USER_TIMEZONE }}">
+      </div>
+    </div>
+
+    <!-- ── Flask debug ── -->
+    <div class="section">
+      <div class="section-title">Отладка</div>
+      <div class="field">
+        <label><span class="key">FLASK_DEBUG</span>
+          <span class="hint">Режим отладки Flask (не включать в продакшне)</span></label>
+        <div class="toggle-wrap">
+          <label class="toggle">
+            <input type="checkbox" name="FLASK_DEBUG" value="true"
+                   {% if env.FLASK_DEBUG == 'true' %}checked{% endif %}>
+            <span class="slider"></span>
+          </label>
+          <span class="toggle-label">Включить debug</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Security ── -->
+    <div class="section">
+      <div class="section-title">Безопасность</div>
+      <div class="field">
+        <label><span class="key">DASHBOARD_PASSWORD</span>
+          <span class="hint">Новый пароль дашборда (пусто = не менять)</span></label>
+        <input type="password" name="DASHBOARD_PASSWORD" placeholder="(не изменять)"
+               autocomplete="new-password" spellcheck="false"
+               class="secret-field">
+      </div>
+      <div class="field">
+        <label><span class="key">ALICE_SKILL_TOKEN</span>
+          <span class="hint">OAuth-токен Яндекс Алисы (опционально)</span></label>
+        <input type="text" name="ALICE_SKILL_TOKEN" value="{{ env.ALICE_SKILL_TOKEN }}">
+      </div>
+    </div>
+
+    <!-- ── Flask / Server ── -->
+    <div class="section">
+      <div class="section-title">Flask / Сервер</div>
+      <div class="field">
+        <label>
+          <span class="key">FLASK_PORT</span>
+          <span class="restart-badge">⚠️ требует рестарта</span>
+          <span class="hint">Порт gunicorn/Flask</span>
+        </label>
+        <input type="text" name="FLASK_PORT" value="{{ env.FLASK_PORT }}">
+      </div>
+      <div class="field">
+        <label>
+          <span class="key">DB_PATH</span>
+          <span class="restart-badge">⚠️ требует рестарта</span>
+          <span class="hint">Путь к SQLite-базе (пусто = рядом со скриптами)</span>
+        </label>
+        <input type="text" name="DB_PATH" value="{{ env.DB_PATH }}">
+      </div>
+    </div>
+
+    <div class="actions">
+      <div style="display:flex;gap:10px;">
+        <form method="post" action="/dashboard/reload" style="display:inline;">
+          <button type="submit" class="btn" title="Применить параметры без перезапуска">
+            ⚡ Применить параметры
+          </button>
+        </form>
+        <form method="post" action="/dashboard/restart" style="display:inline;">
+          <button type="submit" class="btn danger"
+                  title="Полный перезапуск сервиса (systemd restart=always)">
+            🔄 Перезапустить сервис
+          </button>
+        </form>
+      </div>
+      <div class="actions-right">
+        <a href="/dashboard" class="btn">Отмена</a>
+        <button type="submit" class="btn primary">💾 Сохранить .env</button>
+      </div>
+    </div>
+
+  </form>
+</div>
+
+<script>
+// Load model list from API on page load
+(function loadModels() {
+  const sel   = document.getElementById('model-select');
+  const hint  = document.getElementById('models-hint');
+  const current = sel.value;   // e.g. "claude-opus-4-5 (текущий)"
+
+  fetch('/dashboard/api/models')
+    .then(r => r.json())
+    .then(data => {
+      const models = data.models || [];
+      sel.innerHTML = '';
+      let found = false;
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        // The current value stored in .env (no suffix)
+        const currentClean = '{{ env.CLAUDE_MODEL }}';
+        if (m === currentClean) {
+          opt.selected = true;
+          found = true;
+        }
+        opt.textContent = m;
+        sel.appendChild(opt);
+      });
+      // If current model not in list, add it at top
+      if (!found && currentClean) {
+        const opt = document.createElement('option');
+        opt.value = currentClean;
+        opt.textContent = currentClean + ' (текущий, не в списке)';
+        opt.selected = true;
+        sel.insertBefore(opt, sel.firstChild);
+      }
+      const src = data.source === 'api' ? ' (из Anthropic API)' : ' (встроенный список)';
+      hint.textContent = models.length + ' моделей' + src;
+    })
+    .catch(() => {
+      hint.textContent = 'Не удалось загрузить список — введите вручную';
+      // Fallback: replace select with text input
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.name = 'CLAUDE_MODEL';
+      inp.value = '{{ env.CLAUDE_MODEL }}';
+      inp.style.width = '100%';
+      sel.parentNode.replaceChild(inp, sel);
+    });
+})();
+</script>
+</body>
+</html>

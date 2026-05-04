@@ -37,6 +37,7 @@ class _Entry:
     state: State
     answer: Optional[str] = field(default=None)
     future: Optional[Future] = field(default=None, repr=False)
+    original_utterance: str = field(default="")  # the question that triggered this task
 
 
 # { user_id: _Entry }
@@ -45,14 +46,26 @@ _store: Dict[str, _Entry] = {}
 
 # ── Public API ─────────────────────────────────────────────────────────────
 
-def submit(user_id: str, fn, *args, **kwargs) -> None:
+def get_original_utterance(user_id: str) -> str:
+    """Return the utterance that created the current pending/ready entry."""
+    with _lock:
+        entry = _store.get(user_id)
+        return entry.original_utterance if entry else ""
+
+
+def submit(user_id: str, fn, *args, original_utterance: str = "", **kwargs) -> None:
     """
     Run *fn(*args, **kwargs)* in a background thread and cache the result.
     If there is already a pending request for *user_id* it is discarded and
     replaced with the new one.
+
+    Parameters
+    ----------
+    original_utterance:
+        The user's question that triggered this task (for disambiguation).
     """
     with _lock:
-        entry = _Entry(state=State.PENDING)
+        entry = _Entry(state=State.PENDING, original_utterance=original_utterance)
         _store[user_id] = entry
 
     future = _executor.submit(_run, user_id, fn, args, kwargs)

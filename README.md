@@ -1,4 +1,4 @@
-# Alice × Claude — навык Яндекс Алисы на базе Claude AI
+# Claude for Alice — навык Яндекс Алисы на базе Claude AI
 
 Навык позволяет пользователям разговаривать с моделью Anthropic Claude прямо через Яндекс Алису.
 Каждый пользователь получает свою историю диалога. Все сессии сохраняются в SQLite и доступны через веб-дашборд.
@@ -160,10 +160,21 @@ Claude запускается в фоне (ThreadPoolExecutor)
 
 | Блок | Содержимое |
 |------|-----------|
-| Статус сервиса | Python, SDK, порт, uptime |
+| Статус сервиса | Python, SDK, порт, uptime процесса |
 | Аккаунт Anthropic | Живая проверка + ссылка на billing |
 | Настройки Claude | Модель, токены, таймаут, история |
 | Активные сессии | Список пользователей в памяти |
+
+### Настройки (`/dashboard/settings`)
+
+- **⚡ Применить параметры** — горячая перезагрузка конфига из `.env` без остановки сервиса.
+  Работает для всех параметров, кроме помеченных жёлтым ярлыком.
+- **🔄 Перезапустить сервис** — отправляет `SIGTERM` gunicorn-мастеру; systemd (`Restart=always`)
+  автоматически поднимает процесс заново и читает свежий `.env` (включая `FLASK_PORT` и `DB_PATH`).
+  Sudo-пароль **не требуется**.
+
+> Параметры `FLASK_PORT` и `DB_PATH` помечены ярлыком **⚠️ требует рестарта** —
+> их изменение вступает в силу только после перезапуска.
 
 ### История диалогов (`/dashboard/dialogs`)
 
@@ -179,23 +190,30 @@ Claude запускается в фоне (ThreadPoolExecutor)
 
 ## Настройка
 
-Все параметры задаются через `.env` (см. [`.env.example`](.env.example)):
+Все параметры задаются через `.env` (см. [`.env.example`](.env.example)).
+Большинство применяются горячо кнопкой **⚡ Применить параметры** в дашборде.
+Параметры, отмеченные ⚠️, требуют перезапуска сервиса.
 
 | Переменная | По умолчанию | Описание |
 |-----------|-------------|---------|
 | `ANTHROPIC_API_KEY` | — | **Обязательно.** Ключ Anthropic API |
-| `CLAUDE_MODEL` | `claude-opus-4-5` | Модель Claude |
+| `CLAUDE_MODEL` | `claude-opus-4-6` | Модель Claude |
 | `CLAUDE_MAX_TOKENS` | `1024` | Макс. токенов в ответе |
 | `CLAUDE_SYSTEM_PROMPT` | (встроенный) | Системный промпт для голосового режима |
 | `MAX_HISTORY_TURNS` | `20` | Кол-во пар user/assistant в памяти |
+| `SESSION_TIMEOUT_MINUTES` | `5` | Минут тишины до сброса сессии |
 | `ALICE_REPLY_TIMEOUT` | `3.0` | Секунды ожидания Claude перед «думает» |
-| `FLASK_HOST` | `127.0.0.1` | Только localhost — за Apache |
-| `FLASK_PORT` | `37842` | Порт gunicorn/Flask |
-| `FLASK_DEBUG` | `false` | Режим отладки Flask |
+| `ENABLE_WEB_SEARCH` | `false` | Встроенный веб-поиск (~$10/1000 запросов) |
+| `WEB_SEARCH_MAX_RESULTS` | `3` | Макс. поисковых запросов за один ответ |
+| `USER_LOCATION` | (авто по IP) | Город/регион для системного промпта |
+| `USER_TIMEZONE` | (авто по IP) | IANA-таймзона (напр. `Europe/Moscow`) |
+| `FLASK_HOST` | `127.0.0.1` | Только localhost — за Apache/nginx |
+| `FLASK_PORT` ⚠️ | `37842` | Порт gunicorn/Flask (требует рестарта) |
+| `FLASK_DEBUG` | `false` | Режим отладки; включает лог-уровень DEBUG |
 | `ALICE_SKILL_TOKEN` | `` | OAuth-токен для верификации (опционально) |
 | `DASHBOARD_PASSWORD` | — | Пароль для веб-дашборда |
 | `SECRET_KEY` | (random) | Flask session key (задать для стабильности) |
-| `DB_PATH` | `dialogs.db` | Путь к SQLite-базе диалогов |
+| `DB_PATH` ⚠️ | `dialogs.db` | Путь к SQLite-базе диалогов (требует рестарта) |
 
 ### Настройка таймаута
 
@@ -210,7 +228,7 @@ Claude запускается в фоне (ThreadPoolExecutor)
 **GET `/alice`** — JSON-статус без авторизации:
 ```json
 {
-  "service": "Alice × Claude AI skill",
+  "service": "Claude for Alice AI skill",
   "status": "running",
   "diagnostics": { "api_key_status": "✅ set", ... }
 }
@@ -221,6 +239,9 @@ Claude запускается в фоне (ThreadPoolExecutor)
 sudo journalctl -u claudeforalice -f
 tail -f /var/log/claudeforalice/error.log
 ```
+
+> При `FLASK_DEBUG=true` уровень логирования переключается на `DEBUG` —
+> в журнале появляются детальные сообщения (включая команды перезапуска с паролем, если они использовались).
 
 ---
 

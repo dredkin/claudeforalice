@@ -122,23 +122,34 @@ def init_db() -> None:
 
 # ── Write ──────────────────────────────────────────────────────────────────
 
+def _get_or_create_session(con: sqlite3.Connection, user_id: str, now: int) -> int:
+    """
+    Return the most-recent session_id for *user_id*, creating one if needed.
+
+    A new session is automatically created if the last session has been
+    inactive for longer than SESSION_TIMEOUT_MINUTES (checked via DB timestamp
+    so it survives server restarts).
+    """
+    timeout_sec = config.SESSION_TIMEOUT_MINUTES * 60
+    row = con.execute(
+        "SELECT id, last_active FROM sessions WHERE user_id=? ORDER BY last_active DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    if row and (now - row["last_active"]) <= timeout_sec:
+        return row["id"]
+    # Either no session yet, or the existing session timed out → create fresh
+    cur = con.execute(
+        "INSERT INTO sessions(user_id, started_at, last_active, turn_count) VALUES(?,?,?,0)",
+        (user_id, now, now),
+    )
+    return cur.lastrowid
+
+
 def log_user_message(user_id: str, text: str) -> None:
     """Log a user utterance that doesn't result in a Claude API call."""
     now = int(time.time())
     with _lock, _conn() as con:
-        row = con.execute(
-            "SELECT id FROM sessions WHERE user_id=? ORDER BY last_active DESC LIMIT 1",
-            (user_id,),
-        ).fetchone()
-        if not row:
-            cur = con.execute(
-                "INSERT INTO sessions(user_id, started_at, last_active, turn_count) VALUES(?,?,?,0)",
-                (user_id, now, now),
-            )
-            session_id = cur.lastrowid
-        else:
-            session_id = row["id"]
-
+        session_id = _get_or_create_session(con, user_id, now)
         con.execute(
             "INSERT INTO messages(session_id, role, content, ts) VALUES(?,?,?,?)",
             (session_id, "user", text, now),
@@ -156,19 +167,7 @@ def log_alice_message(user_id: str, text: str) -> None:
     """
     now = int(time.time())
     with _lock, _conn() as con:
-        row = con.execute(
-            "SELECT id FROM sessions WHERE user_id=? ORDER BY last_active DESC LIMIT 1",
-            (user_id,),
-        ).fetchone()
-        if not row:
-            cur = con.execute(
-                "INSERT INTO sessions(user_id, started_at, last_active, turn_count) VALUES(?,?,?,0)",
-                (user_id, now, now),
-            )
-            session_id = cur.lastrowid
-        else:
-            session_id = row["id"]
-
+        session_id = _get_or_create_session(con, user_id, now)
         con.execute(
             "INSERT INTO messages(session_id, role, content, ts) VALUES(?,?,?,?)",
             (session_id, "alice", text, now),
@@ -177,21 +176,6 @@ def log_alice_message(user_id: str, text: str) -> None:
             "UPDATE sessions SET last_active=? WHERE id=?",
             (now, session_id),
         )
-
-
-def _get_or_create_session(con: sqlite3.Connection, user_id: str, now: int) -> int:
-    """Return the most-recent session_id for *user_id*, creating one if needed."""
-    row = con.execute(
-        "SELECT id FROM sessions WHERE user_id=? ORDER BY last_active DESC LIMIT 1",
-        (user_id,),
-    ).fetchone()
-    if row:
-        return row["id"]
-    cur = con.execute(
-        "INSERT INTO sessions(user_id, started_at, last_active, turn_count) VALUES(?,?,?,0)",
-        (user_id, now, now),
-    )
-    return cur.lastrowid
 
 
 def log_turn(user_id: str, user_text: str, assistant_text: str) -> None:
